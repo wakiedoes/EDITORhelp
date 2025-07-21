@@ -1,6 +1,6 @@
 // sw.js
 
-const CACHE_NAME = 'dev-helper-cache-v2'; // Versi cache baru
+const CACHE_NAME = 'dev-helper-cache-v3'; // Naikkan versi lagi untuk lebih aman
 const PREVIEW_PREFIX = '/preview-runtime/';
 
 self.addEventListener('install', event => {
@@ -75,6 +75,7 @@ self.addEventListener('fetch', event => {
       return new Response(content, { headers });
     }());
   } else {
+    // Untuk file aplikasi utama, langsung dari network agar selalu terbaru
     return fetch(event.request);
   }
 });
