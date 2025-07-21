@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, maximum-scale=1.0">
+    <title>Dev Helper - Solid Engine v2</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <style>
+        /* CSS Anda yang sudah lengkap, tidak perlu diubah */
+        html { overflow-x: auto; } body { background-color: #1f2937; color: #f3f4f6; font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace; overflow-y: hidden; } .editor-wrapper { position: relative; width: 100%; height: 100%; } .highlight-overlay { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: inherit; pointer-events: none; white-space: pre; overflow: hidden; font-family: inherit; font-size: inherit; line-height: inherit; } .code-highlight { background-color: rgba(255, 255, 0, 0.4); border-radius: 3px; } .current-highlight { background-color: rgba(255, 165, 0, 0.6); border-radius: 3px; } .editor-textarea { position: absolute; top: 0; left: 0; width: 100%; height: 100%; padding: inherit; background-color: transparent; color: transparent; caret-color: white; border: none; resize: none; white-space: pre; overflow-wrap: normal; overflow: auto; } body.is-dragging-x, body.is-dragging-x * { cursor: col-resize !important; user-select: none !important; } body.is-dragging-y, body.is-dragging-y * { cursor: row-resize !important; user-select: none !important; } .splitter-x { cursor: col-resize; flex-shrink: 0; background-color: #4b5563; } .splitter-x:hover { background-color: #3b82f6; } .splitter-y { cursor: row-resize; flex-shrink: 0; background-color: #4b5563; } .splitter-y:hover { background-color: #3b82f6; } .file-item { cursor: pointer; padding: 4px 8px; border-radius: 4px; display: flex; align-items: center; gap: 8px; } .file-item:hover { background-color: #4A5568; } .file-item.active { background-color: #3b82f6; color: white; } .folder-toggle { transition: transform 0.2s; } .folder-toggle.open { transform: rotate(90deg); } .delete-btn { visibility: hidden; opacity: 0; transition: opacity 0.2s ease-in-out; } .file-item:hover .delete-btn { visibility: visible; opacity: 1; } .mobile-nav-item.active { background-color: #3b82f6; color: white; } .modal-overlay { position: fixed; top: 0; left: 0; right: 0; bottom: 0; background-color: rgba(0, 0, 0, 0.7); display: flex; align-items: center; justify-content: center; z-index: 999; } .modal-content { background-color: #2d3748; padding: 24px; border-radius: 8px; max-width: 90%; width: 400px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1), 0 4px 6px -2px rgba(0,0,0,0.05); } .bottom-tab-btn { padding: 8px 12px; border-bottom: 2px solid transparent; transition: all 0.2s ease-in-out; } .bottom-tab-btn.active { color: white; border-color: #3b82f6; } .bottom-tab-btn:not(.active) { color: #9ca3af; } .toast-fade-enter-active, .toast-fade-leave-active { transition: opacity 0.5s, transform 0.5s; } .toast-fade-enter-from, .toast-fade-leave-to { opacity: 0; transform: translateY(-20px); }
+    </style>
+</head>
+<body>
+    <div id="app" class="h-screen flex flex-col md:flex-row">
+        <!-- Seluruh HTML untuk UI Anda tetap sama -->
+        <transition name="toast-fade"> <div v-if="showToast" :class="toastClasses" class="fixed top-5 right-5 z-[1000] px-4 py-3 rounded-lg shadow-lg text-white font-bold text-sm"> {{ toastMessage }} </div> </transition> <input type="file" ref="fileInput" @change="handleFileImport" multiple style="display: none;"> <input type="file" ref="folderInput" @change="handleFolderImport" webkitdirectory directory multiple style="display: none;"> <input type="file" ref="zipInput" @change="handleZipSelect" style="display: none;" accept=".zip,application/zip,application/x-zip-compressed"> <div v-if="showZipImportModal" class="modal-overlay"> <div class="modal-content"> <h3 class="text-lg font-bold mb-4">Import Project from ZIP</h3> <p class="mb-6 text-gray-300">How do you want to import <b>{{ zipFileToImport?.name }}</b>?</p> <div class="flex flex-col gap-3"> <button @click="processZipImport('replace')" class="w-full px-4 py-2 bg-red-600 hover:bg-red-500 rounded-md font-bold text-white">Replace Current Project</button> <button @click="processZipImport('merge')" class="w-full px-4 py-2 bg-blue-600 hover:bg-blue-500 rounded-md font-bold text-white">Merge with Current Project</button> <button @click="cancelZipImport" class="w-full px-4 py-2 mt-4 bg-gray-600 hover:bg-gray-500 rounded-md text-white">Cancel</button> </div> </div> </div> <div id="left-panel" class="flex flex-col bg-gray-900 overflow-hidden" :style="dynamicLeftPanelStyle" v-show="!isMobile || activeMobileView === 'explorer'"> <div class="flex justify-between items-center p-2 border-b border-gray-600 text-sm flex-shrink-0"> <h3 class="font-bold text-gray-400 uppercase">Berkas</h3> <div class="flex gap-2"> <button @click="saveProjectAsZip" title="Save Project as ZIP" class="text-xl">💾</button> <button @click="triggerFolderImport()" :title="isMobile ? 'Import from ZIP' : 'Import Folder'" class="text-xl">📂</button> <button @click="triggerImport()" title="Import File(s)" class="text-xl">📤</button> <button @click="addFileToProject" title="New File" class="text-xl">📄</button> <button @click="addFolderToProject" title="New Folder" class="text-xl">📁</button> </div> </div> <div class="flex-1 overflow-y-auto p-2 text-sm"> <file-tree-node v-for="item in projectFiles" :key="item.path" :node="item"></file-tree-node> </div> </div> <div id="splitter-x" v-if="!isMobile" class="splitter-x w-[10px] h-full" @mousedown="startDragX" @touchstart="startDragX"></div> <div id="right-panel" class="flex-1 flex flex-col bg-gray-800 overflow-hidden" v-show="!isMobile || activeMobileView !== 'explorer'"> <div id="editor-sub-panel" class="flex flex-col overflow-hidden" :style="dynamicEditorSubPanelStyle" v-show="!isMobile || activeMobileView === 'editor'"> <div class="p-2 border-b border-gray-600 bg-gray-900 flex-shrink-0 flex justify-between items-center"> <div class="flex items-center gap-3"><h2 class="text-base font-bold">Editor</h2><span class="text-xs text-gray-400 mt-1">{{ getFileDisplayPath(currentOpenFile) }}</span></div> <button @click="saveFile" class="px-3 py-1 text-xs bg-gray-600 hover:bg-gray-500 rounded" :disabled="!currentOpenFile">Save</button> </div> <div v-if="isViewingImage" class="flex-1 p-4 flex items-center justify-center bg-gray-800 overflow-auto"> <img :src="currentOpenFile.content" class="max-w-full max-h-full object-contain"> </div> <div v-else class="flex-1 p-4 overflow-auto editor-wrapper"> <div ref="highlightOverlay" class="highlight-overlay" v-html="highlightedHtml"></div> <textarea ref="editorTextarea" v-model="fullCode" @scroll="syncScroll" class="editor-textarea" :disabled="!currentOpenFile"></textarea> </div> <div class="p-2 border-t border-gray-600 bg-gray-900 flex-shrink-0"> <div class="flex items-center justify-between mb-2"><label class="block text-sm font-bold text-gray-400">Find in Code</label><div class="text-xs text-gray-500" v-if="searchQuery && matchCount > 0">{{ currentMatchIndex + 1 }} of {{ matchCount }}</div></div> <div class="flex gap-2"> <input type="text" v-model="searchQuery" @keydown.enter="nextMatch" placeholder="Type to find..." class="flex-1 p-2 bg-gray-700 border border-gray-600 rounded text-white" :disabled="isViewingImage" /> <button @click="clearSearch" class="px-3 bg-gray-600 hover:bg-gray-500 rounded" :disabled="!searchQuery">✕</button> <div class="flex gap-1"> <button @click="prevMatch" class="px-3 bg-blue-600 hover:bg-blue-500 rounded" :disabled="!searchQuery || matchCount < 2">↑</button> <button @click="nextMatch" class="px-3 bg-blue-600 hover:bg-blue-500 rounded" :disabled="!searchQuery || matchCount < 2">↓</button> </div> </div> </div> </div> <div id="splitter-y" v-if="!isMobile" class="splitter-y h-[10px] w-full" @mousedown="startDragY" @touchstart="startDragY"></div> <div id="bottom-panel" class="flex-1 flex flex-col bg-gray-700 overflow-hidden" v-show="!isMobile || isPreviewActive || isConsoleActive"> <div class="p-2 md:px-4 border-b border-gray-600 bg-gray-900 justify-between items-center flex-shrink-0" :class="isMobile ? 'hidden' : 'flex'"> <div class="flex items-center gap-1 md:gap-4 text-sm"> <button @click="activeBottomTab = 'preview'" class="bottom-tab-btn" :class="{ 'active': activeBottomTab === 'preview' }">Preview</button> <button @click="activeBottomTab = 'console'" class="bottom-tab-btn" :class="{ 'active': activeBottomTab === 'console' }">Console</button> </div> <div> <button v-show="isPreviewActive" @click="updateIframe" class="px-3 py-1 text-xs md:text-sm bg-green-500 hover:bg-green-600 rounded disabled:bg-gray-600 disabled:cursor-not-allowed" :disabled="!swReady">{{ runButtonText }}</button> <button v-show="isConsoleActive" @click="clearConsole" class="px-3 py-1 text-xs md:text-sm bg-red-600 hover:bg-red-500 rounded">Clear</button> </div> </div> <div class="p-2 border-b border-gray-600 bg-gray-900 flex justify-between items-center flex-shrink-0" :class="isMobile ? 'flex' : 'hidden'"> <h2 class="text-base font-bold" v-if="isPreviewActive">Live Preview</h2> <h2 class="text-base font-bold" v-if="isConsoleActive">Console</h2> <div> <button v-show="isPreviewActive" @click="updateIframe" class="px-3 py-1 text-sm bg-green-500 hover:bg-green-600 rounded disabled:bg-gray-600 disabled:cursor-not-allowed" :disabled="!swReady">{{ runButtonText }}</button> <button v-show="isConsoleActive" @click="clearConsole" class="px-3 py-1 text-sm bg-red-600 hover:bg-red-500 rounded">Clear</button> </div> </div> <div class="flex-1 p-0 bg-gray-900 relative" v-show="isPreviewActive"> <div v-if="!swReady" class="absolute inset-0 flex items-center justify-center bg-gray-900/80 text-white z-10"> <p>Preview Engine is initializing...</p> </div> <iframe ref="iframe" class="w-full h-full bg-black border-none"></iframe> </div> <div class="flex-1 bg-gray-900 overflow-y-auto text-sm" v-show="isConsoleActive" ref="consoleView"> <div v-if="consoleMessages.length === 0" class="text-gray-500 p-4">Console is empty.</div> <div v-else> <div v-for="(msg, index) in consoleMessages" :key="index" class="font-mono flex items-start border-b border-gray-700/50 py-2 px-3 gap-2" :class="{ 'bg-red-900/20 text-red-400': msg.type === 'error', 'bg-yellow-900/20 text-yellow-400': msg.type === 'warn', 'text-gray-300': msg.type === 'log' }"> <span class="text-gray-500 select-none">{{ msg.timestamp }}</span> <pre class="whitespace-pre-wrap break-words flex-1">{{ msg.message }}</pre> </div> </div> </div> </div> </div> <div v-if="isMobile" class="flex md:hidden justify-around items-center p-1 bg-gray-900 border-t border-gray-700"> <button @click="activeMobileView = 'explorer'" class="mobile-nav-item flex-1 p-2 rounded" :class="{'active': activeMobileView === 'explorer'}">🗂️ Berkas</button> <button @click="activeMobileView = 'editor'" class="mobile-nav-item flex-1 p-2 rounded" :class="{'active': activeMobileView === 'editor'}">✏️ Editor</button> <button @click="activeMobileView = 'preview'" class="mobile-nav-item flex-1 p-2 rounded" :class="{'active': activeMobileView === 'preview'}">▶️ Preview</button> <button @click="activeMobileView = 'console'" class="mobile-nav-item flex-1 p-2 rounded" :class="{'active': activeMobileView === 'console'}">🖥️ Console</button> </div>
+    </div>
+
+    <script>
+        const { createApp, ref, computed, onMounted, watch, nextTick, inject, provide } = Vue;
+
+        const app = createApp({
+            setup() {
+                const fullCode = ref(''), iframe = ref(null), editorTextarea = ref(null), highlightOverlay = ref(null), projectFiles = ref([]), currentOpenFile = ref(null), isMobile = ref(false), activeMobileView = ref('explorer'), searchQuery = ref(''), currentMatchIndex = ref(-1), matchCount = ref(0), matches = ref([]), leftPanelWidth = ref(280), editorSubPanelHeight = ref(60), consoleMessages = ref([]), consoleView = ref(null), activeBottomTab = ref('preview'), zipInput = ref(null), showZipImportModal = ref(false), zipFileToImport = ref(null), fileInput = ref(null), folderInput = ref(null), importTargetFolder = ref(null);
+                const showToast = ref(false), toastMessage = ref(''), toastType = ref('success'); let toastTimeout = null;
+                const triggerToast = (message, type = 'success', duration = 4000) => { clearTimeout(toastTimeout); toastMessage.value = message; toastType.value = type; showToast.value = true; toastTimeout = setTimeout(() => { showToast.value = false; }, duration); };
+                const toastClasses = computed(() => ({ 'bg-green-500': toastType.value === 'success', 'bg-red-500': toastType.value === 'error' }));
+
+                const swReady = ref(false);
+                const runButtonText = computed(() => swReady.value ? 'Run' : 'Initializing...');
+                const PREVIEW_PREFIX = '/preview-runtime/';
+
+                const consoleHijackerScript = `<script> const oC={...window.console},pP=(t,a)=>{try{window.parent.postMessage({source:'iframe-console',type:t,args:[...a]},'*')}catch(e){}};Object.keys(oC).forEach(k=>{if(typeof oC[k]==='function'){window.console[k]=(...a)=>{oC[k](...a);pP(k,a)}}});window.addEventListener('error',e=>pP('error',[e.message,e.filename,e.lineno]));window.addEventListener('unhandledrejection',e=>pP('error',['Unhandled Promise Rejection:',e.reason])); <\/script>`;
+
+                const updateIframe = async () => {
+                    if (!swReady.value) {
+                        triggerToast("Preview engine not yet initialized. Please wait.", "error");
+                        return;
+                    }
+                    if (!navigator.serviceWorker.controller) {
+                        triggerToast("Service Worker is not yet controlling the page. Please wait a moment and try again.", "error", 6000);
+                        return;
+                    }
+
+                    clearConsole();
+                    const fileMap = new Map();
+                    const collectFiles = (items) => { if (!items) return; items.forEach(item => { if (item.type === 'file') fileMap.set(item.path, { content: item.content || '' }); else if (item.type === 'folder') collectFiles(item.children); }); };
+                    collectFiles(projectFiles.value);
+
+                    if (!fileMap.has('index.html')) {
+                        triggerToast('Project must have an index.html file to run.', 'error');
+                        return;
+                    }
+
+                    try {
+                        await new Promise((resolve, reject) => {
+                            const channel = new MessageChannel();
+                            const timeout = setTimeout(() => reject(new Error('SW response timed out.')), 5000);
+                            channel.port1.onmessage = (event) => {
+                                clearTimeout(timeout);
+                                if (event.data?.status === 'ok') resolve();
+                                else reject(new Error('SW failed to process files.'));
+                            };
+                            navigator.serviceWorker.controller.postMessage({
+                                action: 'updateFiles',
+                                files: Array.from(fileMap.entries()),
+                                consoleHijacker: consoleHijackerScript
+                            }, [channel.port2]);
+                        });
+
+                        const targetUrl = `${PREVIEW_PREFIX}?v=${Date.now()}`;
+                        if (iframe.value.contentWindow) {
+                            iframe.value.contentWindow.location.replace(targetUrl);
+                        } else {
+                            iframe.value.src = targetUrl;
+                        }
+
+                        if (isMobile.value && activeMobileView.value !== 'console') {
+                            activeMobileView.value = 'preview';
+                        }
+                    } catch (error) {
+                        console.error("Failed to update preview:", error);
+                        triggerToast(`Preview update failed: ${error.message}`, 'error');
+                    }
+                };
+                
+                const registerServiceWorker = async () => {
+                    if (!('serviceWorker' in navigator)) {
+                        triggerToast('ServiceWorker tidak didukung di browser ini', 'error');
+                        return;
+                    }
+                    try {
+                        const registration = await navigator.serviceWorker.register('/sw.js', { scope: '/' });
+                        console.log('[App] SW registration successful:', registration);
+                        
+                        await navigator.serviceWorker.ready;
+                        console.log('[App] SW is ready.');
+
+                        if (navigator.serviceWorker.controller) {
+                           swReady.value = true;
+                           console.log('[App] SW is controlling. Firing initial preview.');
+                           updateIframe();
+                        }
+                    } catch (error) {
+                        console.error('ServiceWorker registration failed:', error);
+                        triggerToast(`Gagal memuat engine: ${error.message}`, 'error');
+                    }
+                };
+
+                onMounted(() => {
+                    handleResize();
+                    window.addEventListener('resize', handleResize);
+                    window.addEventListener('message', handleConsoleMessage);
+                    
+                    projectFiles.value = [ { name: 'index.html', type: 'file', content: `<!DOCTYPE html>\n<html>\n<head>\n  <title>Welcome!</title>\n  <link rel="stylesheet" href="style.css">\n</head>\n<body>\n  <h1>It Works!</h1>\n  <p>Preview Engine is stable.</p>\n  <script src="main.js" type="module"><\/script>\n</body>\n</html>`}, { name: 'main.js', type: 'file', content: `console.log("main.js loaded successfully!");\nconsole.error("This is a test error message.");` }, { name: 'style.css', type: 'file', content: `body { \n  background-color: #111; \n  color: #eee; \n  font-family: sans-serif; \n  text-align: center; \n  padding-top: 3rem; \n}` } ];
+                    updateAllPaths(projectFiles.value);
+                    openFile(projectFiles.value[0]);
+                    
+                    navigator.serviceWorker.addEventListener('controllerchange', () => {
+                        console.log('[App] Controller changed!');
+                        if (!swReady.value) { // Hanya jalankan jika ini adalah aktivasi pertama
+                           console.log('[App] Firing preview after controller change.');
+                           swReady.value = true;
+                           updateIframe();
+                        }
+                    });
+
+                    registerServiceWorker();
+                });
+
+                // --- Sisa kode helper tidak perlu diubah ---
+                const isPreviewActive = computed(() => isMobile.value ? activeMobileView.value === 'preview' : activeBottomTab.value === 'preview');
+                const isConsoleActive = computed(() => isMobile.value ? activeMobileView.value === 'console' : activeBottomTab.value === 'console');
+                const clearConsole = () => { consoleMessages.value = []; };
+                const handleConsoleMessage = (event) => { const data = event.data; if (data && data.source === 'iframe-console') { const msg = data.args.map(arg => { try { return typeof arg === 'object' && arg !== null ? JSON.stringify(arg, null, 2) : String(arg); } catch { return '[Unserializable]'; } }).join(' '); consoleMessages.value.push({ type: data.type, message: msg, timestamp: new Date().toLocaleTimeString() }); if (data.type === 'error' && !isConsoleActive.value) { if (isMobile.value) activeMobileView.value = 'console'; else activeBottomTab.value = 'console'; } } };
+                watch(consoleMessages, () => { nextTick(() => { if (consoleView.value) consoleView.value.scrollTop = consoleView.value.scrollHeight; }); }, { deep: true });
+                const handleResize = () => { isMobile.value = window.innerWidth < 768; };
+                const isImageFile = (f) => /\.(png|jpe?g|gif|svg|webp)$/i.test(f||'');
+                const isViewingImage = computed(() => currentOpenFile.value && isImageFile(currentOpenFile.value.name));
+                const openFile = (file) => { if (file.type === 'file') { currentOpenFile.value = file; if (!isViewingImage.value) { fullCode.value = file.content || ''; } if (isMobile.value) activeMobileView.value = 'editor'; }};
+                const findItemByPath = (path, collection) => { if (!collection) return null; for (const item of collection) { if (item.path === path) return item; if (item.type === 'folder') { const found = findItemByPath(path, item.children); if (found) return found; } } return null; };
+                const updateAllPaths = (collection, parentPath = '') => { if (!collection) return; collection.forEach(item => { item.path = parentPath ? `${parentPath}/${item.name}` : item.name; if (item.type === 'folder') updateAllPaths(item.children, item.path); }); };
+                const getFileDisplayPath = (file) => file ? file.path : 'No file open';
+                const addFileToFolder = (folder) => { const fileName = prompt(`Enter file name for "${folder.name}":`); if (!fileName) return; if (folder.children.some(c => c.name === fileName)) { triggerToast('An item with that name already exists.', 'error'); return; } const newFile = { name: fileName, type: 'file', content: '' }; folder.children.push(newFile); updateAllPaths(projectFiles.value); const indexFile = findItemByPath('index.html', projectFiles.value); if (indexFile && (fileName.endsWith('.js') || fileName.endsWith('.css'))) { if (confirm(`Link this new file in index.html?`)) { const newPath = newFile.path; if (fileName.endsWith('.css')) indexFile.content = indexFile.content.replace('</head>', `  <link rel="stylesheet" href="${newPath}">\n</head>`); else indexFile.content = indexFile.content.replace('</body>', `  <script src="${newPath}" type="module"><\/script>\n</body>`); if (currentOpenFile.value === indexFile) fullCode.value = indexFile.content; } } openFile(newFile); };
+                const addFolderToFolder = (parent) => { const name = prompt(`Enter folder name in "${parent.name}":`); if (name && !parent.children.some(c => c.name === name)) { parent.children.push({ name, type: 'folder', children: [], isOpen: true }); updateAllPaths(projectFiles.value); }};
+                const addFileToProject = () => addFileToFolder({ children: projectFiles.value, name: 'root', path: '' });
+                const addFolderToProject = () => addFolderToFolder({ children: projectFiles.value, name: 'root', path: '' });
+                const deleteItem = (item) => { if (!confirm(`Delete "${item.name}"?`)) return; const remove = (c, i) => { const idx = c.findIndex(x => x.path === i.path); if (idx > -1) { c.splice(idx, 1); return true; } for (const child of c) { if (child.type === 'folder' && remove(child.children, i)) return true; } return false; }; if (remove(projectFiles.value, item)) { if (currentOpenFile.value && currentOpenFile.value.path === item.path) { currentOpenFile.value = null; fullCode.value = ''; } updateAllPaths(projectFiles.value); } };
+                const triggerImport = (t = null) => { importTargetFolder.value = t; fileInput.value.click(); };
+                const triggerFolderImport = (t = null) => { importTargetFolder.value = t; isMobile.value ? zipInput.value.click() : folderInput.value.click(); };
+                const handleZipSelect = (e) => { const f = e.target.files[0]; if(f) { zipFileToImport.value = f; showZipImportModal.value = true; } e.target.value = ''; };
+                const cancelZipImport = () => { showZipImportModal.value = false; zipFileToImport.value = null; };
+                const processZipImport = async (mode) => { if (!zipFileToImport.value) return; showZipImportModal.value = false; try { const zip = await JSZip.loadAsync(zipFileToImport.value); let fileTree = []; for (const path in zip.files) { const item = zip.files[path]; if (item.dir) { fileTree.push({ path, type: 'folder' }); } else { const content = await item.async(isImageFile(path) ? 'base64' : 'string'); fileTree.push({ path, type: 'file', content: isImageFile(path) ? `data:image/png;base64,${content}` : content }); } } const buildTree = (files) => { const tree = []; const map = {}; files.forEach(f => { const parts = f.path.replace(/\/$/, '').split('/'); parts.reduce((acc, part, i) => { const currentPath = parts.slice(0, i + 1).join('/'); if (!map[currentPath]) { const isFolder = f.type === 'folder' || i < parts.length - 1; const node = { name: part, type: isFolder ? 'folder' : 'file', children: isFolder ? [] : undefined, content: isFolder ? undefined : f.content, isOpen: true }; map[currentPath] = node; (acc || tree).push(node); return isFolder ? node.children : null; } return map[currentPath].children; }, null); }); return tree; }; const importedTree = buildTree(fileTree); if (mode === 'replace') { projectFiles.value = importedTree; } else { projectFiles.value.push(...importedTree); } updateAllPaths(projectFiles.value); openFile(findItemByPath('index.html', projectFiles.value) || projectFiles.value[0]); await nextTick(); updateIframe(); triggerToast('Project imported!', 'success'); } catch (e) { console.error("Error processing ZIP:", e); triggerToast('Failed to process ZIP.', 'error'); } finally { zipFileToImport.value = null; } };
+                const readFileAsPromise = (file) => new Promise((res, rej) => { const r = new FileReader(); r.onload = () => res(r.result); r.onerror = rej; isImageFile(file.name) ? r.readAsDataURL(file) : r.readAsText(file); });
+                const handleFileImport = async (e) => { const files = e.target.files; if (!files.length) return; let target = importTargetFolder.value || { children: projectFiles.value, path: '' }; for (const file of Array.from(files)) { const content = await readFileAsPromise(file); target.children.push({ name: file.name, type: 'file', content }); } updateAllPaths(projectFiles.value); importTargetFolder.value = null; e.target.value = ''; };
+                const handleFolderImport = async (e) => { const files = e.target.files; if (!files.length) return; if (!files[0].webkitRelativePath) { alert("Browser doesn't support folder import. Use ZIP import."); return; } let rootTarget = importTargetFolder.value || { children: projectFiles.value, path: '' }; for (const file of Array.from(files)) { const content = await readFileAsPromise(file); const pathParts = file.webkitRelativePath.split('/'); let currentTarget = rootTarget; for (let i = 0; i < pathParts.length; i++) { const part = pathParts[i]; if (i === pathParts.length - 1) { currentTarget.children.push({ name: part, type: 'file', content }); } else { let nextTarget = currentTarget.children.find(c => c.name === part && c.type === 'folder'); if (!nextTarget) { nextTarget = { name: part, type: 'folder', children: [], isOpen: true }; currentTarget.children.push(nextTarget); } currentTarget = nextTarget; } } } updateAllPaths(projectFiles.value); importTargetFolder.value = null; e.target.value = ''; };
+                watch(fullCode, (v) => { if (currentOpenFile.value && !isViewingImage.value) currentOpenFile.value.content = v; });
+                const syncScroll = () => { if(highlightOverlay.value && editorTextarea.value) { highlightOverlay.value.scrollTop = editorTextarea.value.scrollTop; highlightOverlay.value.scrollLeft = editorTextarea.value.scrollLeft; }};
+                const escapeHtml = (t) => t ? t.replace(/[&<>"']/g, m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m])) : '';
+                const highlightedHtml = computed(() => { if (!fullCode.value || isViewingImage.value) return ''; if (!searchQuery.value) return escapeHtml(fullCode.value); const newMatches = []; const regex = new RegExp(searchQuery.value.replace(/[-\/\\^$*+?.()|[\]{}]/g, '\\$&'), 'gi'); let match; while((match = regex.exec(fullCode.value)) !== null) { newMatches.push({start: match.index, end: match.index + match[0].length}); } matchCount.value = newMatches.length; matches.value = newMatches; if(currentMatchIndex.value >= matchCount.value) currentMatchIndex.value = 0; if(matchCount.value > 0 && currentMatchIndex.value === -1) currentMatchIndex.value = 0; if(matchCount.value === 0) return escapeHtml(fullCode.value); let lastIndex = 0; const parts = newMatches.map((m, i) => { const pre = escapeHtml(fullCode.value.substring(lastIndex, m.start)); lastIndex = m.end; const isCurrent = i === currentMatchIndex.value; const highlight = `<span class="${isCurrent ? 'current-highlight' : 'code-highlight'}">${escapeHtml(fullCode.value.substring(m.start, m.end))}</span>`; return pre + highlight; }); parts.push(escapeHtml(fullCode.value.substring(lastIndex))); return parts.join(''); });
+                const nextMatch = () => { if(matchCount.value > 0) currentMatchIndex.value = (currentMatchIndex.value + 1) % matchCount.value; };
+                const prevMatch = () => { if(matchCount.value > 0) currentMatchIndex.value = (currentMatchIndex.value - 1 + matchCount.value) % matchCount.value; };
+                const clearSearch = () => { searchQuery.value = ''; };
+                const saveFile = () => { if (!currentOpenFile.value) return; try { const isImg = isViewingImage.value; const blob = isImg ? null : new Blob([fullCode.value], { type: 'text/plain;charset=utf-8' }); const url = isImg ? currentOpenFile.value.content : URL.createObjectURL(blob); const a = document.createElement('a'); a.href = url; a.download = currentOpenFile.value.name; document.body.appendChild(a); a.click(); document.body.removeChild(a); if (!isImg) URL.revokeObjectURL(url); triggerToast(`File '${currentOpenFile.value.name}' saved!`, 'success'); } catch (error) { console.error('Error saving file:', error); triggerToast('Error saving file.', 'error'); }};
+                const saveProjectAsZip = async () => { if (projectFiles.value.length === 0) { triggerToast('Project is empty.', 'error'); return; } try { if (typeof JSZip === 'undefined') { triggerToast('Error: JSZip library not loaded.', 'error'); return; } const zip = new JSZip(); const addFolderToZip = (folder, items) => { items.forEach(item => { if (item.type === 'file') { if (isImageFile(item.name) && item.content && item.content.startsWith('data:')) { const base64Data = item.content.split(',')[1]; folder.file(item.name, base64Data, { base64: true }); } else { folder.file(item.name, item.content || ''); } } else if (item.type === 'folder') { const newFolder = folder.folder(item.name); if (item.children) { addFolderToZip(newFolder, item.children); } } }); }; addFolderToZip(zip, projectFiles.value); const content = await zip.generateAsync({ type: 'blob' }); const url = URL.createObjectURL(content); const a = document.createElement('a'); a.href = url; a.download = 'project.zip'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url); triggerToast('Project saved! Check Downloads folder.', 'success'); } catch (error) { console.error("Error creating ZIP:", error); triggerToast('Error creating ZIP file.', 'error'); }};
+                const dynamicLeftPanelStyle = computed(() => isMobile.value ? { width: '100%', height: '100%' } : { width: `${leftPanelWidth.value}px` });
+                const dynamicEditorSubPanelStyle = computed(() => isMobile.value ? { height: '100%' } : { height: `${editorSubPanelHeight.value}%` });
+                let dragStartX, iLW, dragStartY, iEH, rightPanelHeightForDrag; const getCoords = (e) => e.touches ? e.touches[0] : e; const startDragX = (e) => { const coords = getCoords(e); dragStartX = coords.clientX; iLW = leftPanelWidth.value; window.addEventListener(e.type === 'touchstart' ? 'touchmove' : 'mousemove', dX); window.addEventListener(e.type === 'touchstart' ? 'touchend' : 'mouseup', sX); document.body.classList.add('is-dragging-x'); }; const dX = (e) => { const coords = getCoords(e); const nW = iLW + coords.clientX - dragStartX; if (nW > 100 && nW < window.innerWidth - 100) leftPanelWidth.value = nW; }; const sX = (e) => { window.removeEventListener(e.type.replace('end', 'move').replace('up', 'move'), dX); window.removeEventListener(e.type, sX); document.body.classList.remove('is-dragging-x'); };
+                const startDragY = (e) => { const coords = getCoords(e); dragStartY = coords.clientY; iEH = editorSubPanelHeight.value; rightPanelHeightForDrag = document.getElementById('right-panel').offsetHeight; window.addEventListener(e.type === 'touchstart' ? 'touchmove' : 'mousemove', dY); window.addEventListener(e.type === 'touchstart' ? 'touchend' : 'mouseup', sY); document.body.classList.add('is-dragging-y'); }; const dY = (e) => { const coords = getCoords(e); const deltaY = coords.clientY - dragStartY; const nH = ((iEH / 100 * rightPanelHeightForDrag) + deltaY) / rightPanelHeightForDrag * 100; if(nH > 10 && nH < 90) editorSubPanelHeight.value = nH; }; const sY = (e) => { window.removeEventListener(e.type.replace('end', 'move').replace('up', 'move'), dY); window.removeEventListener(e.type, sY); document.body.classList.remove('is-dragging-y'); };
+                
+                provide('actions', { openFile, addFileToFolder, addFolderToFolder, deleteItem, triggerImport, triggerFolderImport });
+                provide('state', { currentOpenFile, isMobile });
+
+                return { swReady, runButtonText, fullCode, iframe, editorTextarea, highlightOverlay, searchQuery, currentMatchIndex, matchCount, projectFiles, currentOpenFile, isMobile, activeMobileView, leftPanelWidth, editorSubPanelHeight, isPreviewActive, isConsoleActive, consoleMessages, consoleView, activeBottomTab, clearConsole, updateIframe, openFile, addFileToFolder, addFolderToFolder, deleteItem, addFileToProject, addFolderToProject, getFileDisplayPath, highlightedHtml, nextMatch, prevMatch, clearSearch, syncScroll, startDragX, startDragY, dynamicLeftPanelStyle, dynamicEditorSubPanelStyle, isViewingImage, saveFile, saveProjectAsZip, zipInput, showZipImportModal, zipFileToImport, handleZipSelect, cancelZipImport, processZipImport, triggerImport, triggerFolderImport, fileInput, folderInput, handleFileImport, handleFolderImport, showToast, toastMessage, toastClasses };
+            }
+        });
+        
+        app.component('file-tree-node', {
+            props: ['node'], setup(props) { const { openFile, addFileToFolder, addFolderToFolder, deleteItem, triggerImport, triggerFolderImport } = inject('actions'); const { currentOpenFile, isMobile } = inject('state'); const toggle = () => { if(props.node.type==='folder') props.node.isOpen = !props.node.isOpen; }; const getIcon = (n) => { if (/\.(png|jpe?g|gif|svg|webp)$/i.test(n)) return '🖼️'; if (n.endsWith('.html')) return '🄷'; if (n.endsWith('.css')) return '🄲'; if (n.endsWith('.js')) return '🄹'; return '📄'; }; return { openFile, addFileToFolder, addFolderToFolder, deleteItem, currentOpenFile, toggle, triggerImport, triggerFolderImport, isMobile, getIcon }; },
+            template: `<div> <div @click="node.type==='folder' ? toggle() : openFile(node)" class="file-item" :class="{active: currentOpenFile && currentOpenFile.path === node.path}"> <span class="w-6 text-center folder-toggle" :class="{open: node.isOpen}">{{ node.type==='folder' ? '▶' : '' }}</span> <span class="w-6 text-xl" v-html="node.type==='folder' ? '📁' : getIcon(node.name)"></span> <span>{{ node.name }}</span> <button @click.stop="deleteItem(node)" class="delete-btn ml-auto text-xl">🗑️</button> </div> <div v-if="node.type==='folder' && node.isOpen" class="ml-4 pl-3 border-l-2 border-gray-700"> <file-tree-node v-for="child in node.children" :key="child.path" :node="child"></file-tree-node> <div @click.stop="addFileToFolder(node)" class="file-item text-gray-400 italic hover:text-white">+ Add File</div> <div @click.stop="addFolderToFolder(node)" class="file-item text-gray-400 italic hover:text-white">+ Add Folder</div> <div @click.stop="triggerImport(node)" class="file-item text-gray-400 italic hover:text-white">+ Import File(s)</div> <div @click.stop="triggerFolderImport(node)" class="file-item text-gray-400 italic hover:text-white">{{ isMobile ? '+ Import from ZIP' : '+ Import Folder' }}</div> </div> </div>`
+        });
+        
+        app.mount('#app');
+    </script>
+</body>
+</html>
